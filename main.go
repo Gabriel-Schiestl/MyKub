@@ -1,47 +1,94 @@
 package main
 
 import (
+	"encoding/json"
 	"log"
 	"net/http"
-	"net/http/httputil"
+	"slices"
+	"sort"
+	"strconv"
+	"strings"
 	"sync"
-	"sync/atomic"
 
 	health_checker "github.com/Gabriel-Schiestl/reverse-proxy/internal"
+	"github.com/Gabriel-Schiestl/reverse-proxy/internal/proxy"
+	"github.com/Gabriel-Schiestl/reverse-proxy/internal/types"
 )
 
-var containers []string
-var containerIndex int32
-var containerMU sync.RWMutex
-
 func main() {
-	newContainers := make(chan []string)
+	deployments := make(map[string]*types.Deployment) 
+	var deploymentsMu sync.RWMutex
+	var containerPort int = 8080
 
-	go health_checker.HealthChecker(containers, newContainers)
+	containersUnavailable := make(chan map[string][]string)
+
+	proxy := proxy.NewProxy(deployments, &deploymentsMu)
+
+	go health_checker.HealthChecker(deployments, containersUnavailable)
 
 	go func() {
-		for containerList := range newContainers {
-			containerMU.Lock()
-			containers = containerList
-			containerMU.Unlock()
+		for containerList := range containersUnavailable {
+			deploymentsMu.Lock()
+			for path, containers := range containerList {
+				deployment := deployments[path]
 
-			log.Println("Updated containers:", containers)
+				indexesToRemove := []int{}
+
+				for index, deployContainer := range deployment.Containers {
+					for _, container := range containers {
+						port, err := strconv.Atoi(strings.Split(container, ":")[1])
+						if err != nil {
+							log.Println("Error converting port:", err)
+							continue
+						}
+
+						if port == deployContainer.Port {
+							indexesToRemove = append(indexesToRemove, index)
+						}
+					}
+				}
+
+				sort.Ints(indexesToRemove)
+				for i := len(indexesToRemove) - 1; i >= 0; i-- {
+					indexToRemove := indexesToRemove[i]
+					log.Println("Removing container:", deployment.Containers[indexToRemove].ID)
+					deployment.Containers = slices.Delete(deployment.Containers, indexToRemove, indexToRemove+1)
+				}
+			}
+			deploymentsMu.Unlock()
+
+			log.Println("Updated containers:", deployments)
 		}
 	}()
 
-	proxy := &httputil.ReverseProxy{
-		Director: func(r *http.Request) {
-			index := atomic.LoadInt32(&containerIndex)
+	
+	http.HandleFunc("/deployment", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			var deployment struct{
+				Path string `json:"path"`
+				Deployment types.Deployment `json:"deployment"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&deployment); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
 
-			containerMU.RLock()
-			r.URL.Scheme = "http"
-			r.URL.Host = containers[index%int32(len(containers))]
-			containerMU.RUnlock()
+			deploymentsMu.Lock()
+			deployment.Deployment.AddContainer(containerPort)
+			deployments[deployment.Path] = &deployment.Deployment
+			containerPort++
+			deploymentsMu.Unlock()
 
-			atomic.AddInt32(&containerIndex, 1)
-		},
-	}
-
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(deployment)
+		} else if r.Method == http.MethodGet {
+			deploymentsMu.RLock()
+			json.NewEncoder(w).Encode(deployments)
+			deploymentsMu.RUnlock()
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	}))
 	http.Handle("/", proxy)
 
 	log.Fatal(http.ListenAndServe(":8080", nil))

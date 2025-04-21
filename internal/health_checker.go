@@ -2,37 +2,44 @@ package health_checker
 
 import (
 	"net/http"
-	"slices"
+	"strconv"
 	"time"
+
+	"github.com/Gabriel-Schiestl/reverse-proxy/internal/types"
 )
 
-var removedContainers []string
+//[path]: []containers
+var removedContainers map[string][]string = make(map[string][]string)
 
-func HealthChecker(containers []string, ch chan []string) {
+func HealthChecker(deployments map[string]*types.Deployment, ch chan map[string][]string) {
 	for {
 		containersToCheck := removedContainers
-		containersToCheck = append(containersToCheck, containers...)
-		removedContainers = []string{}
 
-		for _, c := range containersToCheck {
-			resp, err := http.Get(c + "/hello")
-			if err != nil || resp.StatusCode != http.StatusOK {
-				containersToCheck = removeContainer(containersToCheck, c)
-			} 
+		for key, deployment := range deployments {
+			containers := []string{}
+			for _, container := range deployment.Containers {
+				containers = append(containers, "http://localhost:"+strconv.Itoa(container.Port))
+			}
+			containersToCheck[key] = append(containersToCheck[key], containers...)
 		}
 
-		ch <- containersToCheck
+		removedContainers = make(map[string][]string)
+
+		for path, containers := range containersToCheck {
+			for _, container := range containers {
+				resp, err := http.Get(container + "/hello")
+				if err != nil || resp.StatusCode != http.StatusOK {
+					removeContainer(path, container)
+				}
+			}
+		}
+
+		ch <- removedContainers
 
 		time.Sleep(5 * time.Second)
 	}
 }
 
-func removeContainer(containers []string, container string) []string {
-	for i, c := range containers {
-		if c == container {
-			removedContainers = append(removedContainers, c)
-			return slices.Delete(containers, i, i+1)
-		}
-	}
-	return containers
+func removeContainer(path string, container string) {
+	removedContainers[path] = append(removedContainers[path], container)
 }
