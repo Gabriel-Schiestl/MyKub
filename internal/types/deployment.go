@@ -1,5 +1,15 @@
 package types
 
+import (
+	"context"
+	"fmt"
+
+	dockerutils "github.com/Gabriel-Schiestl/reverse-proxy/internal/docker"
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/network"
+	"github.com/docker/go-connections/nat"
+)
+
 type Deployment struct {
 	Image        string      `json:"image"`
 	Containers   []Container `json:"containers"`
@@ -25,12 +35,48 @@ type Container struct {
 }
 
 func (d *Deployment) AddContainer(port int) {
-	container := Container{
+	newContainer := Container{
 		ID:         "Teste",
 		UsedCPU:    0,
 		UsedMemory: 0,
 		Port:       port,
 	}
 
-	d.Containers = append(d.Containers, container)
+	d.Containers = append(d.Containers, newContainer)
+
+	cli := dockerutils.GetDockerCli()
+	ctx := context.Background()
+
+	containerPort := fmt.Sprintf("%d/tcp", port)
+
+	portBindings := nat.PortMap{
+		nat.Port(containerPort): []nat.PortBinding{
+			{
+				HostIP:   "0.0.0.0",
+				HostPort: fmt.Sprintf("%d", port),
+			},
+		},
+	}
+
+	resp, err := cli.ContainerCreate(ctx, &container.Config{
+		Image: d.Image,
+		ExposedPorts: nat.PortSet{
+			nat.Port(containerPort): struct{}{},
+		},
+	}, &container.HostConfig{
+		PortBindings: portBindings,
+		Resources: container.Resources{
+			Memory:     int64(d.Memory * 1024 * 1024),
+			CPUShares:  int64(d.CPU),
+		},
+	}, &network.NetworkingConfig{}, nil, "")
+	if err != nil {
+		panic(err)
+	}
+
+	newContainer.ID = resp.ID
+
+	if err := cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
+		panic(err)
+	}
 }

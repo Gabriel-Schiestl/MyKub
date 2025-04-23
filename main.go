@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"net/url"
 	"slices"
 	"sort"
 	"strconv"
@@ -19,6 +20,9 @@ func main() {
 	deployments := make(map[string]*types.Deployment) 
 	var deploymentsMu sync.RWMutex
 	var containerPort int = 8080
+
+	deployments["/teste"] = types.NewDeployment("nginx:stable-alpine", 256, 300)
+	deployments["/teste"].AddContainer(containerPort)
 
 	containersUnavailable := make(chan map[string][]string)
 
@@ -36,9 +40,21 @@ func main() {
 
 				for index, deployContainer := range deployment.Containers {
 					for _, container := range containers {
-						port, err := strconv.Atoi(strings.Split(container, ":")[1])
+						parsedURL, err := url.Parse(container)
 						if err != nil {
-							log.Println("Error converting port:", err)
+							log.Printf("Error parsing URL %s: %v", container, err)
+							continue
+						}
+
+						host := parsedURL.Host
+						portStr := ""
+						if strings.Contains(host, ":") {
+							portStr = strings.Split(host, ":")[1]
+						}
+						
+						port, err := strconv.Atoi(portStr)
+						if err != nil {
+							log.Printf("Error converting port %s: %v", portStr, err)
 							continue
 						}
 
