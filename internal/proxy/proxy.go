@@ -1,9 +1,9 @@
 package proxy
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httputil"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -23,8 +23,9 @@ func NewProxy(deployments map[string]*types.Deployment, mu *sync.RWMutex) *httpu
 					mu.RLock()
 					container := deployment.Containers[index%int32(len(deployment.Containers))]
 					r.URL.Scheme = "http"
-					r.URL.Host = "localhost:" + strconv.Itoa(container.Port)
+					r.URL.Host = fmt.Sprintf("localhost:%d", container.Port)
 					r.URL.Path = strings.TrimPrefix(url, path)
+
 					if r.URL.Path == "" {
 						r.URL.Path = "/"
 					}

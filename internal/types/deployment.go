@@ -3,6 +3,7 @@ package types
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	dockerutils "github.com/Gabriel-Schiestl/reverse-proxy/internal/docker"
 	"github.com/docker/docker/api/types/container"
@@ -16,14 +17,35 @@ type Deployment struct {
 	Memory       int         `json:"memory"`
 	CPU          int         `json:"cpu"`
 	CurrentIndex int32
+	ExposedPort string `json:"exposed_port"`
 }
 
 func NewDeployment(image string, memory int, cpu int) *Deployment {
+	cli := dockerutils.GetDockerCli()
+    ctx := context.Background()
+
+    imageInspect, err := cli.ImageInspect(ctx, image)
+    if err != nil {
+        panic(fmt.Errorf("erro ao inspecionar imagem: %w", err))
+    }
+
+    var containerPort string
+    for k := range imageInspect.Config.ExposedPorts {
+        containerPort = string(k)
+        break
+    }
+
+	if containerPort == "" {
+        fmt.Println("Aviso: Imagem não expõe nenhuma porta, usando porta padrão 80")
+        containerPort = "80"
+    }
+
 	return &Deployment{
 		Image:      image,
 		Containers: []Container{},
 		Memory:     memory,
 		CPU:        cpu,
+		ExposedPort: containerPort,
 	}
 }
 
@@ -46,8 +68,11 @@ func (d *Deployment) AddContainer(port int) {
 
 	cli := dockerutils.GetDockerCli()
 	ctx := context.Background()
-
-	containerPort := fmt.Sprintf("%d/tcp", port)
+    
+    containerPort := d.ExposedPort
+    if !strings.Contains(containerPort, "/") {
+        containerPort = fmt.Sprintf("%s/tcp", containerPort)
+    }
 
 	portBindings := nat.PortMap{
 		nat.Port(containerPort): []nat.PortBinding{

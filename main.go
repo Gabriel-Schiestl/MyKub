@@ -21,7 +21,7 @@ func main() {
 	var deploymentsMu sync.RWMutex
 	var containerPort int = 8080
 
-	deployments["/teste"] = types.NewDeployment("nginx:stable-alpine", 256, 300)
+	deployments["/teste"] = types.NewDeployment("back", 256, 300)
 	deployments["/teste"].AddContainer(containerPort)
 
 	containersUnavailable := make(chan map[string][]string)
@@ -77,7 +77,7 @@ func main() {
 		}
 	}()
 
-	
+	http.Handle("/", proxy)
 	http.HandleFunc("/deployment", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			var deployment struct{
@@ -105,7 +105,7 @@ func main() {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
 	}))
-	http.Handle("/", proxy)
+	
 
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	log.Fatal(http.ListenAndServe(":80", nil))
 }
