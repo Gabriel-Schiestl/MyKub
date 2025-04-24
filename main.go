@@ -4,11 +4,8 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"net/url"
 	"slices"
 	"sort"
-	"strconv"
-	"strings"
 	"sync"
 
 	health_checker "github.com/Gabriel-Schiestl/reverse-proxy/internal"
@@ -41,25 +38,8 @@ func main() {
 
 				for index, deployContainer := range deployment.Containers {
 					for _, container := range containers {
-						parsedURL, err := url.Parse(container)
-						if err != nil {
-							log.Printf("Error parsing URL %s: %v", container, err)
-							continue
-						}
 
-						host := parsedURL.Host
-						portStr := ""
-						if strings.Contains(host, ":") {
-							portStr = strings.Split(host, ":")[1]
-						}
-						
-						port, err := strconv.Atoi(portStr)
-						if err != nil {
-							log.Printf("Error converting port %s: %v", portStr, err)
-							continue
-						}
-
-						if port == deployContainer.Port {
+						if container.Port == deployContainer.Port {
 							indexesToRemove = append(indexesToRemove, index)
 						}
 					}
@@ -80,36 +60,18 @@ func main() {
 					continue
 				}
 				
-				for _, containerURL := range containers {
-					parsedURL, err := url.Parse(containerURL)
-					if err != nil {
-						log.Printf("Error parsing URL %s: %v", containerURL, err)
-						continue
-					}
-					
-					host := parsedURL.Host
-					portStr := ""
-					if strings.Contains(host, ":") {
-						portStr = strings.Split(host, ":")[1]
-					}
-					
-					port, err := strconv.Atoi(portStr)
-					if err != nil {
-						log.Printf("Error converting port %s: %v", portStr, err)
-						continue
-					}
-					
+				for _, container := range containers {
 					containerExists := false
 					for _, existingContainer := range deployment.Containers {
-						if existingContainer.Port == port {
+						if existingContainer.ID == container.ID {
 							containerExists = true
 							break
 						}
 					}
 					
 					if !containerExists {
-						log.Printf("Re-adding recovered container on port %d to %s", port, path)
-						deployment.AddContainer(port)
+						log.Printf("Re-adding recovered container of id %s to %s", container.ID, path)
+						deployment.Containers = append(deployment.Containers, container)
 					}
 				}
         	}

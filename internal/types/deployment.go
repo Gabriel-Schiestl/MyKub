@@ -9,6 +9,7 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/go-connections/nat"
+	"github.com/google/uuid"
 )
 
 type Deployment struct {
@@ -58,7 +59,7 @@ type Container struct {
 
 func (d *Deployment) AddContainer(port int) {
 	newContainer := Container{
-		ID:         "Teste",
+		ID:         uuid.NewString(),
 		UsedCPU:    0,
 		UsedMemory: 0,
 		Port:       port,

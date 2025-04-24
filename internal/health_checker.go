@@ -11,22 +11,21 @@ import (
 )
 
 //[path]: []containers
-var removedContainers map[string][]string = make(map[string][]string)
+
 
 type ContainerStatus struct {
-    Failed    map[string][]string
-    Recovered map[string][]string 
+    Failed    map[string][]types.Container
+    Recovered map[string][]types.Container 
 }
 
 func HealthChecker(deployments map[string]*types.Deployment, ch chan ContainerStatus) {
+    var removedContainers map[string][]types.Container = make(map[string][]types.Container)
+    
     for {
-        containersToCheck := make(map[string][]string)
+        containersToCheck := make(map[string][]types.Container)
         
         for key, deployment := range deployments {
-            for _, container := range deployment.Containers {
-                containerURL := fmt.Sprintf("http://localhost:%d", container.Port)
-                containersToCheck[key] = append(containersToCheck[key], containerURL)
-            }
+            containersToCheck[key] = append(containersToCheck[key], deployment.Containers...)
         }
 
         for path, containers := range removedContainers {
@@ -36,14 +35,15 @@ func HealthChecker(deployments map[string]*types.Deployment, ch chan ContainerSt
         fmt.Println("Containers to check:", containersToCheck)
         
         status := ContainerStatus{
-            Failed:    make(map[string][]string),
-            Recovered: make(map[string][]string),
+            Failed:    make(map[string][]types.Container),
+            Recovered: make(map[string][]types.Container),
         }
         
-        stillFailing := make(map[string][]string)
+        stillFailing := make(map[string][]types.Container)
 
         for path, containers := range containersToCheck {
-            for _, containerURL := range containers {
+            for _, container := range containers {
+                containerURL := fmt.Sprintf("http://localhost:%d", container.Port)
                 fmt.Println("Checking container:", containerURL)
                 
                 _, err := url.Parse(containerURL)
@@ -61,8 +61,8 @@ func HealthChecker(deployments map[string]*types.Deployment, ch chan ContainerSt
                 resp, err := client.Get(healthEndpoint)
                 
                 wasRemoved := false
-                for _, removedURL := range removedContainers[path] {
-                    if removedURL == containerURL {
+                for _, removed := range removedContainers[path] {
+                    if removed.ID == container.ID {
                         wasRemoved = true
                         break
                     }
@@ -76,14 +76,13 @@ func HealthChecker(deployments map[string]*types.Deployment, ch chan ContainerSt
                         resp.Body.Close()
                     }
                     
-                    status.Failed[path] = append(status.Failed[path], containerURL)
-                    stillFailing[path] = append(stillFailing[path], containerURL)
+                    removeContainer(path, container, status, stillFailing)
                 } else {
                     resp.Body.Close()
                     
                     if wasRemoved {
                         fmt.Printf("Container recovered: %s\n", containerURL)
-                        status.Recovered[path] = append(status.Recovered[path], containerURL)
+                        status.Recovered[path] = append(status.Recovered[path], container)
                     }
                 }
             }
@@ -103,6 +102,8 @@ func joinURLPath(baseURL, path string) string {
     return baseURL + "/" + path
 }
 
-func removeContainer(path string, container string) {
-	removedContainers[path] = append(removedContainers[path], container)
+func removeContainer(path string, container types.Container, status ContainerStatus, stillFailing map[string][]types.Container) {
+    fmt.Printf("Removing container %s from path %s\n", container.ID, path)
+	status.Failed[path] = append(status.Failed[path], container)
+    stillFailing[path] = append(stillFailing[path], container)
 }
