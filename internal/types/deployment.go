@@ -68,7 +68,7 @@ func (d *Deployment) AddContainer(port int) {
 
 	cli := dockerutils.GetDockerCli()
 	ctx := context.Background()
-    
+
     containerPort := d.ExposedPort
     if !strings.Contains(containerPort, "/") {
         containerPort = fmt.Sprintf("%s/tcp", containerPort)

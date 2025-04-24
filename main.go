@@ -21,19 +21,20 @@ func main() {
 	var deploymentsMu sync.RWMutex
 	var containerPort int = 8080
 
-	deployments["/teste"] = types.NewDeployment("back", 256, 300)
-	deployments["/teste"].AddContainer(containerPort)
+	// deployments["/teste"] = types.NewDeployment("back", 256, 300)
+	// deployments["/teste"].AddContainer(containerPort)
 
-	containersUnavailable := make(chan map[string][]string)
+	containersStatus := make(chan health_checker.ContainerStatus)
 
 	proxy := proxy.NewProxy(deployments, &deploymentsMu)
 
-	go health_checker.HealthChecker(deployments, containersUnavailable)
+	go health_checker.HealthChecker(deployments, containersStatus)
 
 	go func() {
-		for containerList := range containersUnavailable {
+		for status := range containersStatus {
 			deploymentsMu.Lock()
-			for path, containers := range containerList {
+
+			for path, containers := range status.Failed {
 				deployment := deployments[path]
 
 				indexesToRemove := []int{}
@@ -71,13 +72,55 @@ func main() {
 					deployment.Containers = slices.Delete(deployment.Containers, indexToRemove, indexToRemove+1)
 				}
 			}
+
+			for path, containers := range status.Recovered {
+				deployment := deployments[path]
+				if deployment == nil {
+					log.Printf("Deployment for path %s not found", path)
+					continue
+				}
+				
+				for _, containerURL := range containers {
+					parsedURL, err := url.Parse(containerURL)
+					if err != nil {
+						log.Printf("Error parsing URL %s: %v", containerURL, err)
+						continue
+					}
+					
+					host := parsedURL.Host
+					portStr := ""
+					if strings.Contains(host, ":") {
+						portStr = strings.Split(host, ":")[1]
+					}
+					
+					port, err := strconv.Atoi(portStr)
+					if err != nil {
+						log.Printf("Error converting port %s: %v", portStr, err)
+						continue
+					}
+					
+					containerExists := false
+					for _, existingContainer := range deployment.Containers {
+						if existingContainer.Port == port {
+							containerExists = true
+							break
+						}
+					}
+					
+					if !containerExists {
+						log.Printf("Re-adding recovered container on port %d to %s", port, path)
+						deployment.AddContainer(port)
+					}
+				}
+        	}
+
 			deploymentsMu.Unlock()
 
 			log.Println("Updated containers:", deployments)
 		}
+		
 	}()
 
-	http.Handle("/", proxy)
 	http.HandleFunc("/deployment", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			var deployment struct{
@@ -89,9 +132,11 @@ func main() {
 				return
 			}
 
+			newDeployment := types.NewDeployment(deployment.Deployment.Image, deployment.Deployment.Memory, deployment.Deployment.CPU)
+
 			deploymentsMu.Lock()
-			deployment.Deployment.AddContainer(containerPort)
-			deployments[deployment.Path] = &deployment.Deployment
+			newDeployment.AddContainer(containerPort)
+			deployments[deployment.Path] = newDeployment
 			containerPort++
 			deploymentsMu.Unlock()
 
@@ -105,7 +150,8 @@ func main() {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
 	}))
-	
 
+	http.Handle("/", proxy)
+	
 	log.Fatal(http.ListenAndServe(":80", nil))
 }

@@ -15,7 +15,7 @@ func NewProxy(deployments map[string]*types.Deployment, mu *sync.RWMutex) *httpu
 	return &httputil.ReverseProxy{
 		Director: func(r *http.Request) {
 			url := r.URL.Path
-
+			fmt.Println("AAAAAAAAAAAAAAAAAAAAAAAAA", deployments["/teste"].Containers)
 			for path, deployment := range deployments {
 				if strings.HasPrefix(url, path) {
 					index := atomic.LoadInt32(&deployment.CurrentIndex)

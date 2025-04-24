@@ -13,10 +13,15 @@ import (
 //[path]: []containers
 var removedContainers map[string][]string = make(map[string][]string)
 
-func HealthChecker(deployments map[string]*types.Deployment, ch chan map[string][]string) {
+type ContainerStatus struct {
+    Failed    map[string][]string
+    Recovered map[string][]string 
+}
+
+func HealthChecker(deployments map[string]*types.Deployment, ch chan ContainerStatus) {
     for {
         containersToCheck := make(map[string][]string)
-
+        
         for key, deployment := range deployments {
             for _, container := range deployment.Containers {
                 containerURL := fmt.Sprintf("http://localhost:%d", container.Port)
@@ -30,7 +35,12 @@ func HealthChecker(deployments map[string]*types.Deployment, ch chan map[string]
 
         fmt.Println("Containers to check:", containersToCheck)
         
-        removedContainers = make(map[string][]string)
+        status := ContainerStatus{
+            Failed:    make(map[string][]string),
+            Recovered: make(map[string][]string),
+        }
+        
+        stillFailing := make(map[string][]string)
 
         for path, containers := range containersToCheck {
             for _, containerURL := range containers {
@@ -49,22 +59,40 @@ func HealthChecker(deployments map[string]*types.Deployment, ch chan map[string]
                 }
                 
                 resp, err := client.Get(healthEndpoint)
-                if err != nil {
-                    fmt.Printf("Health check failed for %s: %v\n", healthEndpoint, err)
-                    removeContainer(path, containerURL)
-                    continue
+                
+                wasRemoved := false
+                for _, removedURL := range removedContainers[path] {
+                    if removedURL == containerURL {
+                        wasRemoved = true
+                        break
+                    }
                 }
                 
-                if resp.StatusCode != http.StatusOK {
-                    fmt.Printf("Health check returned non-OK status: %d for %s\n", resp.StatusCode, healthEndpoint)
-                    removeContainer(path, containerURL)
+                if err != nil || (resp != nil && resp.StatusCode != http.StatusOK) {
+                    if err != nil {
+                        fmt.Printf("Health check failed for %s: %v\n", healthEndpoint, err)
+                    } else {
+                        fmt.Printf("Health check returned non-OK status: %d for %s\n", resp.StatusCode, healthEndpoint)
+                        resp.Body.Close()
+                    }
+                    
+                    status.Failed[path] = append(status.Failed[path], containerURL)
+                    stillFailing[path] = append(stillFailing[path], containerURL)
+                } else {
+                    resp.Body.Close()
+                    
+                    if wasRemoved {
+                        fmt.Printf("Container recovered: %s\n", containerURL)
+                        status.Recovered[path] = append(status.Recovered[path], containerURL)
+                    }
                 }
-                
-                resp.Body.Close()
             }
         }
-
-        ch <- removedContainers
+        
+        removedContainers = stillFailing
+        
+        ch <- status
+        
         time.Sleep(10 * time.Second)
     }
 }
