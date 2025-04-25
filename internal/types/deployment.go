@@ -9,12 +9,11 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/go-connections/nat"
-	"github.com/google/uuid"
 )
 
 type Deployment struct {
 	Image        string      `json:"image"`
-	Containers   []Container `json:"containers"`
+	Containers   []*Container `json:"containers"`
 	Memory       int         `json:"memory"`
 	CPU          int         `json:"cpu"`
 	CurrentIndex int32
@@ -43,7 +42,7 @@ func NewDeployment(image string, memory int, cpu int) *Deployment {
 
 	return &Deployment{
 		Image:      image,
-		Containers: []Container{},
+		Containers: []*Container{},
 		Memory:     memory,
 		CPU:        cpu,
 		ExposedPort: containerPort,
@@ -58,8 +57,7 @@ type Container struct {
 }
 
 func (d *Deployment) AddContainer(port int) {
-	newContainer := Container{
-		ID:         uuid.NewString(),
+	newContainer := &Container{
 		UsedCPU:    0,
 		UsedMemory: 0,
 		Port:       port,
@@ -135,7 +133,7 @@ func (d *Deployment) AddContainer(port int) {
 	}
 
 	newContainer.ID = resp.ID
-
+	fmt.Println("Creating container with ID:", newContainer.ID)
 	if err := cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
 		panic(err)
 	}

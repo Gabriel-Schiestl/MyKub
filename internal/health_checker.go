@@ -14,15 +14,15 @@ import (
 
 
 type ContainerStatus struct {
-    Failed    map[string][]types.Container
-    Recovered map[string][]types.Container 
+    Failed    map[string][]*types.Container
+    Recovered map[string][]*types.Container 
 }
 
 func HealthChecker(deployments map[string]*types.Deployment, ch chan ContainerStatus) {
-    var removedContainers map[string][]types.Container = make(map[string][]types.Container)
+    var removedContainers map[string][]*types.Container = make(map[string][]*types.Container)
     
     for {
-        containersToCheck := make(map[string][]types.Container)
+        containersToCheck := make(map[string][]*types.Container)
         
         for key, deployment := range deployments {
             containersToCheck[key] = append(containersToCheck[key], deployment.Containers...)
@@ -35,11 +35,11 @@ func HealthChecker(deployments map[string]*types.Deployment, ch chan ContainerSt
         fmt.Println("Containers to check:", containersToCheck)
         
         status := ContainerStatus{
-            Failed:    make(map[string][]types.Container),
-            Recovered: make(map[string][]types.Container),
+            Failed:    make(map[string][]*types.Container),
+            Recovered: make(map[string][]*types.Container),
         }
         
-        stillFailing := make(map[string][]types.Container)
+        stillFailing := make(map[string][]*types.Container)
 
         for path, containers := range containersToCheck {
             for _, container := range containers {
@@ -102,7 +102,7 @@ func joinURLPath(baseURL, path string) string {
     return baseURL + "/" + path
 }
 
-func removeContainer(path string, container types.Container, status ContainerStatus, stillFailing map[string][]types.Container) {
+func removeContainer(path string, container *types.Container, status ContainerStatus, stillFailing map[string][]*types.Container) {
     fmt.Printf("Removing container %s from path %s\n", container.ID, path)
 	status.Failed[path] = append(status.Failed[path], container)
     stillFailing[path] = append(stillFailing[path], container)
