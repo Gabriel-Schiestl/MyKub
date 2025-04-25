@@ -62,5 +62,7 @@ func Update(deploymentsMu *sync.RWMutex, deployments map[string]*types.Deploymen
 		deploymentsMu.Unlock()
 
 		log.Println("Updated containers:", deployments)
+
+		Inspect(deployments, deploymentsMu)
 	}
 }
