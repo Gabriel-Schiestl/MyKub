@@ -70,6 +70,40 @@ func (d *Deployment) AddContainer(port int) {
 	cli := dockerutils.GetDockerCli()
 	ctx := context.Background()
 
+	containers, err := cli.ContainerList(ctx, container.ListOptions{All: true})
+    if err != nil {
+        fmt.Printf("Erro ao listar containers: %v\n", err)
+    } else {
+        for _, c := range containers {
+            if strings.Contains(c.Image, d.Image) {
+                containerJSON, err := cli.ContainerInspect(ctx, c.ID)
+                if err != nil {
+                    fmt.Printf("Error inspecting container %s: %v\n", c.ID, err)
+                    continue
+                }
+
+                for _, portBinding := range containerJSON.HostConfig.PortBindings {
+                    for _, binding := range portBinding {
+                        if binding.HostPort == fmt.Sprintf("%d", port) {
+                            fmt.Printf("Removing existing container %s with port %d\n", c.ID[:12], port)
+                            
+                            timeout := 10
+                            err = cli.ContainerStop(ctx, c.ID, container.StopOptions{Timeout: &timeout})
+                            if err != nil {
+                                fmt.Printf("Error stoping container %s: %v\n", c.ID[:12], err)
+                            }
+                            
+                            err = cli.ContainerRemove(ctx, c.ID, container.RemoveOptions{Force: true})
+                            if err != nil {
+                                fmt.Printf("Error removing container %s: %v\n", c.ID[:12], err)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     containerPort := d.ExposedPort
     if !strings.Contains(containerPort, "/") {
         containerPort = fmt.Sprintf("%s/tcp", containerPort)

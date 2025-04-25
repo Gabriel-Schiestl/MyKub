@@ -4,13 +4,12 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"slices"
-	"sort"
 	"sync"
 
 	health_checker "github.com/Gabriel-Schiestl/reverse-proxy/internal"
 	"github.com/Gabriel-Schiestl/reverse-proxy/internal/proxy"
 	"github.com/Gabriel-Schiestl/reverse-proxy/internal/types"
+	"github.com/Gabriel-Schiestl/reverse-proxy/internal/utils"
 )
 
 func main() {
@@ -18,70 +17,13 @@ func main() {
 	var deploymentsMu sync.RWMutex
 	var containerPort int = 8080
 
-	// deployments["/teste"] = types.NewDeployment("back", 256, 300)
-	// deployments["/teste"].AddContainer(containerPort)
-
 	containersStatus := make(chan health_checker.ContainerStatus)
 
 	proxy := proxy.NewProxy(deployments, &deploymentsMu)
 
 	go health_checker.HealthChecker(deployments, containersStatus)
 
-	go func() {
-		for status := range containersStatus {
-			deploymentsMu.Lock()
-
-			for path, containers := range status.Failed {
-				deployment := deployments[path]
-
-				indexesToRemove := []int{}
-
-				for index, deployContainer := range deployment.Containers {
-					for _, container := range containers {
-
-						if container.Port == deployContainer.Port {
-							indexesToRemove = append(indexesToRemove, index)
-						}
-					}
-				}
-
-				sort.Ints(indexesToRemove)
-				for i := len(indexesToRemove) - 1; i >= 0; i-- {
-					indexToRemove := indexesToRemove[i]
-					log.Println("Removing container:", deployment.Containers[indexToRemove].ID)
-					deployment.Containers = slices.Delete(deployment.Containers, indexToRemove, indexToRemove+1)
-				}
-			}
-
-			for path, containers := range status.Recovered {
-				deployment := deployments[path]
-				if deployment == nil {
-					log.Printf("Deployment for path %s not found", path)
-					continue
-				}
-				
-				for _, container := range containers {
-					containerExists := false
-					for _, existingContainer := range deployment.Containers {
-						if existingContainer.ID == container.ID {
-							containerExists = true
-							break
-						}
-					}
-					
-					if !containerExists {
-						log.Printf("Re-adding recovered container of id %s to %s", container.ID, path)
-						deployment.Containers = append(deployment.Containers, container)
-					}
-				}
-        	}
-
-			deploymentsMu.Unlock()
-
-			log.Println("Updated containers:", deployments)
-		}
-		
-	}()
+	go utils.Update(&deploymentsMu, deployments, containersStatus)
 
 	http.HandleFunc("/deployment", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
