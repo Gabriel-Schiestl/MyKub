@@ -23,7 +23,7 @@ func main() {
 
 	go health_checker.HealthChecker(deployments, containersStatus)
 
-	go utils.Update(&deploymentsMu, deployments, containersStatus)
+	go utils.Update(&deploymentsMu, deployments, containersStatus, &containerPort)
 
 	http.HandleFunc("/deployment", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {

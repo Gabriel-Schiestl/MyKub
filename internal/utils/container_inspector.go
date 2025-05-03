@@ -3,34 +3,11 @@ package utils
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"log"
-	"sync"
 
-	dockerutils "github.com/Gabriel-Schiestl/reverse-proxy/internal/docker"
 	"github.com/Gabriel-Schiestl/reverse-proxy/internal/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
 )
-
-func Inspect(deployments map[string]*types.Deployment, mu *sync.RWMutex) {
-	mu.RLock()
-	defer mu.RUnlock()
-
-	cli := dockerutils.GetDockerCli()
-
-	for _, deployment := range deployments {
-		for _, container := range deployment.Containers {
-			resp, err := cli.ContainerInspect(context.Background(), container.ID)
-			if err != nil {
-				log.Printf("Error inspecting container %s: %v", container.ID, err)
-				continue
-			}
-
-			fmt.Println(resp.HostConfig.MemorySwap)
-		}
-	}
-}
 
 type ContainerStats struct {
     CPUPercentage    int
